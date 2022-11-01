@@ -1,0 +1,1063 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Игнорирование программных предупреждений
+import warnings
+warnings.filterwarnings('ignore')
+
+# Загрузка библиотек и модулей
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+
+# Формирование набора данных
+df_train = pd.read_csv('train_dataset_train.csv')
+df_test = pd.read_csv('test_dataset_test.csv')
+# Замена значения типа 0 на 5 для последующего выявления тестовых даннахы
+df_test['type'].replace(0, 5, inplace=True)
+df = pd.concat([df_train, df_test])
+del df_train, df_test
+df_ed = pd.read_csv('Education.csv')
+df_ed = pd.merge(df, df_ed, how='left', left_on='id', right_on='id')
+
+# Разведочный анализ данных
+print('\n''Количество пропущенных значений:')
+print(df_ed.isna().sum().sort_values(ascending=False))
+print('\n''Количество дубликатов:')
+print(df_ed.duplicated().sum())
+# Удаление дубликатов
+df_ed = df_ed.drop_duplicates()
+# Вывод описания
+df_ed.info()
+# Вывод количества уникальных значений
+print(df_ed.nunique().sort_values())
+###############################################################################
+###############################################################################
+
+# Обработка признаков
+# 0 ПРИЗНАК
+# Удаление строчных пробелов
+df_ed['id'] = df_ed['id'].str.strip()
+df_ed['id'].value_counts()
+print(df_ed['id'].unique().shape)
+print(df_ed['id'].unique())
+# Разбиение сотрудников по подразделениям
+def split_id(dataframe):
+    df = dataframe['id'].copy()
+    df = df.str.split('-', expand=True)
+    return df.iloc[:, 0], df.iloc[:, 1]
+
+df_ed['ОРГ'], df_ed['id_number']= split_id(df_ed)
+###############################################################################
+
+# 1 ПРИЗНАК
+df_ed['type'].value_counts()
+print(df_ed['type'].unique().shape)
+print(df_ed['type'].unique())
+###############################################################################
+
+# 2 ПРИЗНАК
+# Удаление строчных пробелов
+df_ed['Табельный номер руководителя'] = df_ed['Табельный номер руководителя'].str.strip()
+df_ed['Табельный номер руководителя'].value_counts()
+print(df_ed['Табельный номер руководителя'].unique().shape)
+print(df_ed['Табельный номер руководителя'].unique())
+# Выявление по табельнику подразделений
+def split_personnel_number(dataframe):
+    df = dataframe['Табельный номер руководителя'].copy()
+    df = df.str.split('-', expand=True)
+    return df.iloc[:, 1]
+
+df_ed['Табельный_номер_руководителя_number']= split_personnel_number(df_ed)
+# Замена nan-значений на 0
+df_ed['Табельный_номер_руководителя_number'].replace(np.nan, 0, inplace=True)
+# Удаление первоначального признака с табельным номером
+df_ed.drop('Табельный номер руководителя', axis=1, inplace=True)
+###############################################################################
+
+# 3 ПРИЗНАК
+# Удаление строчных пробелов
+df_ed['Вид образования'] = df_ed['Вид образования'].str.strip()
+df_ed['Вид образования'].value_counts()
+print(df_ed['Вид образования'].unique().shape)
+print(df_ed['Вид образования'].unique())
+# Выполнение замены значений
+df_ed['Вид образования'].replace(np.nan, 'Неизвестно', inplace=True)
+###############################################################################
+
+# 4 ПРИЗНАК
+# Удаление строчных пробелов
+df_ed['Специальность'] = df_ed['Специальность'].str.strip()
+df_ed['Специальность'].value_counts()
+print(df_ed['Специальность'].unique().shape)
+print(df_ed['Специальность'].unique())
+# Удаление признака по причине малой информативности
+df_ed.drop('Специальность', axis=1, inplace=True)
+###############################################################################
+###############################################################################
+
+# Выравнивание порядка расположения строк согласно df
+df.drop('type', axis=1, inplace=True)
+df['id'] = df['id'].str.strip()
+df_ed = pd.merge(df, df_ed, how='left', left_on='id', right_on='id')
+
+# Выполнение группировки по id сотрудника
+df_ed = df_ed.groupby('id', as_index=False).agg(lambda x: x.tolist())
+###############################################################################
+
+# Обработка сгруппированных признаков
+# Получение уникальных значений в списке
+df_ed['type'] = pd.DataFrame.from_dict([x for x in df_ed['type'].apply(lambda x: set(x))])
+df_ed['ОРГ'] = pd.DataFrame.from_dict([x for x in df_ed['ОРГ'].apply(lambda x: set(x))])
+df_ed['id_number'] = pd.DataFrame.from_dict([x for x in df_ed['id_number'].apply(lambda x: set(x))])
+df_ed['Табельный_номер_руководителя_number'] = pd.DataFrame.from_dict([x for x in df_ed['Табельный_номер_руководителя_number'].apply(lambda x: set(x))])
+df_ed['Вид образования'] = [x for x in df_ed['Вид образования'].apply(lambda x: set(x))]
+df_ed['Вид образования'] = df_ed['Вид образования'].apply(lambda x: list(x))
+
+# Преобразование категориальных признаков в числовой формат
+df_ed['ОРГ'] = df_ed['ОРГ'].apply(lambda x: 0 if x == 'ОРГ1' else 1)
+df_ed['id_number'] = df_ed['id_number'].astype('category').cat.codes.astype('int64')
+df_ed['Табельный_номер_руководителя_number'] = df_ed['Табельный_номер_руководителя_number'].astype('category').cat.codes.astype('int64')
+
+# Выравнивание порядка расположения строк согласно df
+df_ed = pd.merge(df, df_ed, how='left', left_on='id', right_on='id')
+
+# Унитарное кодирование признака
+df_ed_dummies = pd.get_dummies(df_ed['Вид образования'].apply(pd.Series).stack(), prefix='Вид_образования').sum(level=0)
+df_ed_dummies = df_ed_dummies.astype('int64')
+df_ed = pd.concat([df_ed, df_ed_dummies], axis=1)
+del df_ed_dummies
+df_ed = df_ed.drop('Вид образования', axis=1)
+###############################################################################
+###############################################################################
+
+# Выполнение блиц-расчёта
+from sklearn.model_selection import train_test_split
+from xgboost import XGBClassifier, plot_importance
+from sklearn.model_selection import KFold
+from sklearn.model_selection import cross_val_score
+from sklearn.ensemble import RandomForestClassifier
+
+np.random.seed(7)
+
+def experiment(dataframe):
+    df_train = dataframe.loc[dataframe['type']!=5]
+    df_train.drop('id', axis=1, inplace=True)
+
+    df_test = dataframe.loc[dataframe['type']==5]
+    df_test.drop(columns=['type', 'id'], axis=1, inplace=True)
+
+    X = df_train.drop(['type'], axis=1)
+    y = df_train[['type']]
+
+    model =  RandomForestClassifier(n_jobs=-1)
+    kfold = KFold(n_splits=10)
+    results = cross_val_score(model, X, y, cv=kfold, verbose=1, n_jobs=-1)
+    print('\n'"Accuracy: %.2f%% (%.2f%%)" % (results.mean()*100, results.std()*100))
+    return results
+
+results = experiment(df_ed)
+###############################################################################
+
+# Матрица коэффициентов корреляции
+correlations = df_ed.corr(method='pearson')
+correlations_filter = correlations[correlations > 0.2]
+
+# Корреляция с целевой переменной (тренировочная часть)
+def show_correlations(dataframe):
+    correlations = abs(dataframe.corr(method='pearson')['type'])
+    correlations.drop('type').plot(kind ='bar', color='dodgerblue')
+    plt.show()
+
+show_correlations(df_ed.loc[df_ed['type']!=5])
+###############################################################################
+###############################################################################
+
+def restore_missing_ОРГ(dataframe):
+    # Фильтр по ОРГ-1
+    ОРГ_1 = dataframe.loc[dataframe['ОРГ']==1]
+    # Фильтр ОРГ_1 по типу
+    ОРГ_1 = ОРГ_1.loc[ОРГ_1['type']!=5]
+    # Формирование df
+    df_ОРГ1 = ОРГ_1.copy()
+    df_ОРГ1.drop('id', axis=1, inplace=True)
+
+    # Фильтр: для тренировочных данных табельник с номером > 0
+    df_train = df_ОРГ1.loc[df_ОРГ1['Табельный_номер_руководителя_number']!=0]
+    # Фильтр: для тестовых = 0
+    df_test = df_ОРГ1.loc[df_ОРГ1['Табельный_номер_руководителя_number']==0]
+    df_test = df_test.drop(['Табельный_номер_руководителя_number'], axis=1)
+
+    X = df_train.drop(['Табельный_номер_руководителя_number'], axis=1)
+    y = df_train[['Табельный_номер_руководителя_number']]
+
+    model =  RandomForestClassifier()
+    kfold = KFold(n_splits=10)
+    results_restore = cross_val_score(model, X, y, cv=kfold, verbose=1, n_jobs=-1)
+    print('\n'"Kfold_rain_accuracy: %.2f%% (%.2f%%)" % (results_restore.mean()*100, results_restore.std()*100))
+
+    model.fit(X, y)
+
+    yhat = model.predict(df_test)
+    yhat = pd.DataFrame(yhat, columns=['Табельный_номер_руководителя_number'])
+    # Замена пропущенных нулевых номеров табельника на предсказанные моделью
+    df_test = df_test[['id_number']].copy().reset_index(drop=True)
+    df_test['Табельный_номер_руководителя_number'] = yhat
+
+    ОРГ_1 = pd.merge(ОРГ_1[['id', 'Табельный_номер_руководителя_number', 'id_number']], df_test, how='left', left_on='id_number', right_on='id_number')
+    ОРГ_1.fillna(0, inplace=True)
+    ОРГ_1['Табельный_номер_руководителя_number'] = ОРГ_1['Табельный_номер_руководителя_number_x'] + ОРГ_1['Табельный_номер_руководителя_number_y']
+    ОРГ_1.drop(columns=['Табельный_номер_руководителя_number_x', 'Табельный_номер_руководителя_number_y'], inplace=True)
+    ОРГ_1.drop('id_number', axis=1, inplace=True)
+    ОРГ_1.fillna(0, inplace=True)
+
+    ОРГ_1_5 = dataframe.loc[dataframe['ОРГ']==1]
+    ОРГ_1_5 = ОРГ_1_5.loc[ОРГ_1_5['type']==5]
+    ОРГ_1_5 = ОРГ_1_5[['id', 'Табельный_номер_руководителя_number']]
+    ОРГ_1 = pd.concat([ОРГ_1, ОРГ_1_5])
+
+    ОРГ_1_full = df_ed.loc[df_ed['ОРГ']==1]
+    ОРГ_1_full = pd.DataFrame(ОРГ_1_full['id'])
+    ОРГ_1_full = pd.merge(ОРГ_1_full['id'], ОРГ_1, how='left', left_on='id', right_on='id')
+    ОРГ_0_full = df_ed.loc[df_ed['ОРГ']==0]
+    ОРГ_0_full = ОРГ_0_full[['id', 'Табельный_номер_руководителя_number']]
+    ОРГ_0_1 = pd.concat([ОРГ_1_full, ОРГ_0_full])
+
+    # Соединение восстановленных значений по ОРГ-1 с df
+    df = pd.merge(dataframe['id'], ОРГ_0_1, how='left', left_on='id', right_on='id')
+    df.fillna(0, inplace=True)
+    df = pd.merge(dataframe['id'], df, how='left', left_on='id', right_on='id')
+    # Возврат df с подготовленным табельным номером (замещение пропущенных значений
+    # в подразделении ОРГ-1 с эффективностью 70% по данным файла education
+    return df
+
+tab_col = restore_missing_ОРГ(df_ed)
+tab_col = pd.merge(df, tab_col, how='left', left_on='id', right_on='id')
+tab_col.drop('id', axis=1, inplace=True)
+
+df_ed['Табельный_номер_руководителя_number'] = tab_col; del tab_col
+###############################################################################
+###############################################################################
+
+# Удостоверяемся, что корреляця признака с табельным номером к типу увеличилась
+show_correlations(df_ed.loc[df_ed['type']!=5])
+
+###############################################################################
+# Дополнительный признак
+def add_command_number(dataframe):
+    df = dataframe[['id_number', 'Табельный_номер_руководителя_number']]
+    # Группировка по табельному номеру руководителя
+    df = df.groupby('Табельный_номер_руководителя_number', as_index=False).agg(lambda x: x.tolist())
+    # Определение команды/отдела
+    df['Номер_команды'] = df['Табельный_номер_руководителя_number'].astype('category').cat.codes.astype('int64')
+    df = df.drop('id_number', axis=1)
+    return df
+
+command_number = add_command_number(df_ed)
+df_ed = pd.merge(df_ed, command_number, how='left', left_on='Табельный_номер_руководителя_number', right_on='Табельный_номер_руководителя_number')
+del command_number
+###############################################################################
+
+# Проверка корреляции
+show_correlations(df_ed.loc[df_ed['type']!=5])
+
+# Удаление переменных
+del correlations, correlations_filter
+
+# Формирование набора данных с наиболее коррелирующими с целевой переменной признаками
+df_ed_best = df_ed[['id', 'type', 'ОРГ', 'id_number', 'Табельный_номер_руководителя_number', 'Номер_команды']].copy()
+
+# Точка вхождения для подгрузки подготовленного набора данных в файл с моделью
+if __name__ == "__main__":
+    df_ed, df_ed_best
+
+
+
+
+
+"""
+ТАК КАК КАЖДЫЙ ИХ ИСХОДНЫХ НАБОРОВ ДАННЫХ АНАЛИЗИРОВАЛ И ПОДГОТАВЛИВАЛ В ОТДЕЛЬНОМ ФАЙЛЕ,
+КОТОРЫЙ ЗАТЕМ ПОДГРУЖАЛ КАК МОДУЛЬ, ВСЕ ДАЛЬНЕЙШИЕ ШАГИ ПОСТРОЧНЫЕ И С МИНИМАЛЬНЫМИ ПОЯСНЕНИЯМИ.
+ТАКЖЕ УБРАЛ КОД С ЭКСПЕРИМЕНТОМ НА RFC ДЛЯ КАЖДОГО НАБОРА ДАННЫХ, ЧТОБЫ РАСТЯГИВАТЬ КОД.
+
+"""
+
+
+
+###############################################################################
+####   Calls.csv   ############################################################
+###############################################################################
+
+df_train = pd.read_csv('train_dataset_train.csv')
+df_test = pd.read_csv('test_dataset_test.csv')
+df_test['type'].replace(0, 5, inplace=True)
+df = pd.concat([df_train, df_test])
+del df_train, df_test
+df_calls = pd.read_csv("Calls.csv", parse_dates = ['Date'])
+df_calls = pd.merge(df, df_calls, how='left', left_on='id', right_on='id')
+
+# head = df_workday.head(200)
+# print('\n''Количество пропущенных значений:')
+# print(df_calls.isna().sum().sort_values(ascending=False))
+# print('\n''Количество дубликатов:')
+# print(df_calls.duplicated().sum())
+
+df_calls = df_calls.drop_duplicates()
+
+# df_calls.info()
+
+# print(df_calls.nunique().sort_values())
+
+# 0 ПРИЗНАК
+df_calls['id'] = df_calls['id'].str.strip()
+# df_calls['id'].value_counts()
+# print(df_calls['id'].unique().shape)
+# print(df_calls['id'].unique())
+
+# 1 ПРИЗНАК
+# df_calls['type'].value_counts()
+# print(df_calls['type'].unique().shape)
+# print(df_calls['type'].unique())
+
+# 2 ПРИЗНАК
+# df_calls['Date'].value_counts()
+# print(df_calls['Date'].unique().shape)
+# print(df_calls['Date'].unique())
+
+df_calls['Дата_звонки_в_какой_месяц'] = df_calls['Date'].dt.month
+df_calls['Дата_звонки_в_какой_день'] = df_calls['Date'].dt.day
+df_calls = df_calls.drop('Date', axis=1)
+# print(df_calls['Дата_звонки_в_какой_месяц'].mean()) # 6.963251132148824
+# print(df_calls['Дата_звонки_в_какой_день'].mean()) # 16.229403297153606
+values = {"Дата_звонки_в_какой_месяц": 7, "Дата_звонки_в_какой_день": 16}
+df_calls = df_calls.fillna(value=values); del values
+
+# 3 ПРИЗНАК
+# df_calls['CallTime'].value_counts()
+df_calls['CallTime'] = df_calls['CallTime'].str.strip().str.replace(',', '.').astype(float)
+# print(df_calls['CallTime'].mean()) # 0.19536630078325198
+df_calls['CallTime'] = df_calls['CallTime'].fillna(0.195)
+
+# 4 ПРИЗНАК
+# df_calls['NumberOfCalls'].value_counts()
+# df_calls['NumberOfCalls'].plot(kind='box')
+# plt.show()
+# print(df_calls['NumberOfCalls'].unique().shape)
+# print(df_calls['NumberOfCalls'].unique())
+# print(df_calls['NumberOfCalls'].mean()) # 5.49 = 6
+df_calls['NumberOfCalls'] = df_calls['NumberOfCalls'].fillna(6).astype(int)
+
+# 5 ПРИЗНАК
+df_calls['Вид учета времени'] = df_calls['Вид учета времени'].str.strip().str.lower()
+# df_calls['Вид учета времени'].value_counts()
+# print(df_calls['Вид учета времени'].unique().shape)
+# print(df_calls['Вид учета времени'].unique())
+df_calls['Вид учета времени'].replace(np.nan, 'неизвестно', inplace=True)
+df_calls['Вид учета времени'] = df_calls['Вид учета времени'].astype('category')
+
+# 6 ПРИЗНАК
+df_calls['InOut'] = df_calls['InOut'].str.strip().str.lower()
+# df_calls['InOut'].value_counts()
+# print(df_calls['InOut'].unique().shape)
+# print(df_calls['InOut'].unique())
+df_calls['InOut'].replace(np.nan, 'неизвестно', inplace=True)
+df_calls['InOut'] = df_calls['InOut'].astype('category')
+
+
+def show_correlations(dataframe):
+    correlations = abs(dataframe.corr(method='pearson')['type'])
+    correlations.drop('type').plot(kind ='bar', color='dodgerblue')
+    plt.show()
+
+show_correlations(df_calls.loc[df_calls['type']!=5])
+
+###############################################################################
+
+df.drop('type', axis=1, inplace=True)
+df['id'] = df['id'].str.strip()
+
+df_calls = df_calls.groupby('id', as_index=False).agg(lambda x: x.tolist())
+###############################################################################
+
+df_calls['type'] = pd.DataFrame.from_dict([x for x in df_calls['type'].apply(lambda x: set(x))])
+df_calls['CallTime'] = df_calls['CallTime'].apply(lambda x: sum(x))
+df_calls = df_calls.assign(CallTime_Minutes = lambda x: (x['CallTime'] * 60))
+df_calls['NumberOfCalls'] = df_calls['NumberOfCalls'].apply(lambda x: sum(x))
+df_calls['Вид учета времени'] = df_calls['Вид учета времени'].apply(lambda x: list(set(x)))
+df_calls['Кол-во_месяцев_со_звонками'] = df_calls['Дата_звонки_в_какой_месяц'].apply(lambda x: len(set(x)))
+df_calls = df_calls.drop('Дата_звонки_в_какой_месяц', axis=1)
+df_calls['Кол-во_дней_со_звонками'] = df_calls['Дата_звонки_в_какой_день'].apply(lambda x: len(set(x)))
+df_calls = df_calls.drop('Дата_звонки_в_какой_день', axis=1)
+
+# Унитарное кодирование некоторых признаков
+# "ВИД УЧЕТА ВРЕМЕНИ"
+df_calls_dummies = pd.get_dummies(df_calls['Вид учета времени'].apply(pd.Series).stack(), prefix='Вид_учета_времени').sum(level=0)
+df_calls_dummies = df_calls_dummies.astype('int64')
+df_calls = pd.concat([df_calls, df_calls_dummies], axis=1)
+del df_calls_dummies
+df_calls = df_calls.drop(columns=['Вид учета времени'])
+
+# ВХОДЯЩИЕ И ИСХОДЯЩИЕ ЗВОНКИ
+df_calls_dummies = pd.get_dummies(df_calls['InOut'].apply(pd.Series).stack(), prefix='InOut').sum(level=0)
+df_calls_dummies = df_calls_dummies.astype('int64')
+df_calls = pd.concat([df_calls, df_calls_dummies], axis=1)
+del df_calls_dummies
+df_calls = df_calls.drop(columns=['InOut'])
+
+# head = df_calls.head(20)
+
+show_correlations(df_calls.loc[df_calls['type']!=5])
+
+df_calls = pd.merge(df, df_calls, how='left', left_on='id', right_on='id')
+
+###############################################################################
+
+df_calls_best = df_calls[['id', 'Вид_учета_времени_выходные дни']].copy()
+
+if __name__ == "__main__":
+    df_calls, df_calls_best
+
+
+
+
+###############################################################################
+####   Calls.csv   ############################################################
+###############################################################################
+
+df_train = pd.read_csv('train_dataset_train.csv')
+df_test = pd.read_csv('test_dataset_test.csv')
+df_test['type'].replace(0, 5, inplace=True)
+df = pd.concat([df_train, df_test])
+del df_train, df_test
+pars_colls = ['Дата старта задания', 'Дата завершения задания плановая', 'Дата завершения задания фактическая']
+df_task = pd.read_csv('Tasks.csv', parse_dates = pars_colls); del pars_colls
+df_task = pd.merge(df, df_task, how='left', left_on='id', right_on='id')
+
+# head = df_task.head(200)
+# print('\n''Количество пропущенных значений:')
+# print(df_task.isna().sum().sort_values(ascending=False))
+# print('\n''Количество дубликатов:')
+# print(df_task.duplicated().sum())
+
+# df_task.info()
+
+# print(df_task.nunique().sort_values())
+
+# 0 ПРИЗНАК
+df_task['id'] = df_task['id'].str.strip()
+# df_task['id'].value_counts()
+# print(df_task['id'].unique().shape)
+# print(df_task['id'].unique())
+
+# 1 ПРИЗНАК
+# df_task['type'].value_counts()
+# print(df_task['type'].unique().shape)
+# print(df_task['type'].unique())
+
+# 2 ПРИЗНАК
+df_task['Статус по просрочке'] = df_task['Статус по просрочке'].str.strip()
+# df_task['Статус по просрочке'].value_counts()
+# print(df_task['Статус по просрочке'].unique().shape)
+# print(df_task['Статус по просрочке'].unique())
+df_task['Статус по просрочке'].replace(np.nan, 'Неизвестно', inplace=True)
+
+# 3 ПРИЗНАК
+df_task['Срок плановый'] = df_task['Срок плановый'].str.strip()
+# df_task['Срок плановый'].value_counts()
+# print(df_task['Срок плановый'].unique().shape)
+# print(df_task['Срок плановый'].unique())
+df_task['Срок плановый'].replace(np.nan, 'Неизвестно', inplace=True)
+
+# 4 ПРИЗНАК
+df_task['Просрочено, дней'].value_counts()
+# print(df_task['Просрочено, дней'].unique().shape)
+# print(df_task['Просрочено, дней'].unique())
+# print(df_task['Просрочено, дней'].mean()) # 14.65271421159419
+df_task['Просрочено, дней'] = df_task['Просрочено, дней'].fillna(15)
+
+# 5 ПРИЗНАК
+df_task['ДлительностьПросрочки'] = df_task['ДлительностьПросрочки'].str.strip()
+# df_task['ДлительностьПросрочки'].value_counts()
+# print(df_task['ДлительностьПросрочки'].unique().shape)
+# print(df_task['ДлительностьПросрочки'].unique())
+df_task['ДлительностьПросрочки'].replace(np.nan, 'Неизвестно', inplace=True)
+
+# 6 ПРИЗНАК
+df_task['ID задачи'] = df_task['ID задачи'].str.strip()
+# df_task['ID задачи'].value_counts()
+# print(df_task['ID задачи'].unique().shape)
+# print(df_task['ID задачи'].unique())
+df_task['ID задачи'].replace(np.nan, 'Неизвестно', inplace=True)
+
+# 7 ПРИЗНАК
+df_task['Вид документа'] = df_task['Вид документа'].str.strip()
+# df_task['Вид документа'].value_counts()
+# print(df_task['Вид документа'].unique().shape)
+# print(df_task['Вид документа'].unique())
+df_task['Вид документа'].replace(np.nan, 'Неизвестно', inplace=True)
+
+# 8 ПРИЗНАК
+# df_task['Дата старта задания'].value_counts()
+# print(df_task['Дата старта задания'].unique().shape)
+# print(df_task['Дата старта задания'].unique())
+df_task['Дата старта задания'] = df_task['Дата старта задания'].dt.date
+# df_task['Дата старта задания'] = df_task['Дата старта задания'].fillna(0) # матем.операции
+
+# 9 ПРИЗНАК
+# df_task['Дата завершения задания плановая'].value_counts()
+# print(df_task['Дата завершения задания плановая'].unique().shape)
+# print(df_task['Дата завершения задания плановая'].unique())
+df_task['Дата завершения задания плановая'] = df_task['Дата завершения задания плановая'].dt.date
+# df_task['Дата завершения задания плановая'] = df_task['Дата завершения задания плановая'].fillna(0) # матем.операции
+# df_task.drop('Дата завершения задания плановая', axis=1, inplace=True) # половина (119220) - наны
+
+# 10 ПРИЗНАК
+# df_task['Дата завершения задания фактическая'].value_counts()
+# print(df_task['Дата завершения задания фактическая'].unique().shape)
+# print(df_task['Дата завершения задания фактическая'].unique())
+df_task['Дата завершения задания фактическая'] = df_task['Дата завершения задания фактическая'].dt.date
+# df_task['Дата завершения задания фактическая'] = df_task['Дата завершения задания фактическая'].fillna(0) # матем.операции
+
+# 11 ПРИЗНАК
+df_task['Состояние задания'] = df_task['Состояние задания'].str.strip()
+# df_task['Состояние задания'].value_counts()
+# print(df_task['Состояние задания'].unique().shape)
+# print(df_task['Состояние задания'].unique())
+df_task['Состояние задания'].replace(np.nan, 'Неизвестно', inplace=True)
+
+# ДОПОЛНИТЕЛЬНЫЕ ПРИЗНАКИ ДО ГРУППИРОВКИ (ОПЕРАЦИИ С ДАТАМИ)
+# 12 ПРИЗНАК
+df_task['Срок_выполнения_задания_план'] = (df_task['Дата завершения задания плановая'] - df_task['Дата старта задания']).dt.days
+# print(df_task['Срок_выполнения_задания_план'].mean())
+df_task['Срок_выполнения_задания_план'].fillna(df_task['Срок_выполнения_задания_план'].mean(), inplace=True)
+
+# 13 ПРИЗНАК
+df_task['Срок_выполнения_задания_фактич'] = (df_task['Дата завершения задания фактическая'] - df_task['Дата старта задания']).dt.days
+# print(df_task['Срок_выполнения_задания_фактич'].mean())
+df_task['Срок_выполнения_задания_фактич'].fillna(df_task['Срок_выполнения_задания_фактич'].mean(), inplace=True)
+
+# 14 ПРИЗНАК
+df_task['Отклонение(Ф-П)'] = df_task['Срок_выполнения_задания_фактич'] - df_task['Срок_выполнения_задания_план']
+
+# 15 ПРИЗНАК
+df_task['Процентный_показатель_достижения_плановых_показателей_(%)'] = (df_task['Срок_выполнения_задания_фактич'] / df_task['Срок_выполнения_задания_план']) *100
+# df_task['Процентный_показатель_достижения_плановых_показателей_(%)'] = df_task['Процентный_показатель_достижения_плановых_показателей_(%)'].apply(lambda x: x if x <= 100 else 0)
+df_task['Процентный_показатель_достижения_плановых_показателей_(%)'].replace([np.inf, -np.inf], 0, inplace=True)
+
+def show_correlations(dataframe):
+    correlations = abs(dataframe.corr(method='pearson')['type'])
+    correlations.drop('type').plot(kind ='bar', color='dodgerblue')
+    plt.show()
+
+show_correlations(df_task.loc[df_task['type']!=5])
+
+df.drop('type', axis=1, inplace=True)
+###############################################################################
+
+df_task['Срок_выполнения_задания_план'].fillna(df_task['Срок_выполнения_задания_план'].mean(), inplace=True)
+df_task['Срок_выполнения_задания_фактич'].fillna(df_task['Срок_выполнения_задания_фактич'].mean(), inplace=True)
+df_task.fillna(0, inplace=True)
+df_task = df_task.groupby('id', as_index=False).agg(lambda x: x.tolist())
+###############################################################################
+
+# Унитарное кодирование некоторых признаков
+def dummies(dataframe, column): # df_task_grouped['type']
+    df = pd.get_dummies(dataframe[column].apply(pd.Series).stack(), prefix=column).sum(level=0)
+    dataframe = pd.concat([dataframe, df], axis=1)
+    dataframe = dataframe.drop(columns=[column])
+    return dataframe
+
+df_task['type'] = pd.DataFrame.from_dict([x for x in df_task['type'].apply(lambda x: set(x))])
+df_task = dummies(df_task, 'Статус по просрочке')
+df_task = dummies(df_task, 'Срок плановый')
+df_task['Просрочено, дней'] = df_task['Просрочено, дней'].apply(lambda x: sum(x))
+df_task = dummies(df_task, 'ДлительностьПросрочки')
+
+# Удаление неинформативного признака
+df_task.drop(columns=['ID задачи'], inplace=True)
+
+df_task['Срок_выполнения_задания_план'] = df_task['Срок_выполнения_задания_план'].apply(lambda x: sum(x))
+df_task['Срок_выполнения_задания_фактич'] = df_task['Срок_выполнения_задания_фактич'].apply(lambda x: sum(x))
+# ДОПОЛНИТЕЛЬНАЯ ОБРАБОТКА НОВОГО ПРИЗНАКА
+df_task['Отклонение(Ф-П)'] = df_task['Срок_выполнения_задания_фактич'] - df_task['Срок_выполнения_задания_план']
+df_task['Отклонение(Ф-П)'] = df_task['Отклонение(Ф-П)'].apply(lambda x: x if x > 0 else 0)
+# ДОПОЛНИТЕЛЬНАЯ ОБРАБОТКА НОВОГО ПРИЗНАКА
+df_task['Процентный_показатель_достижения_плановых_показателей_(%)'] = (df_task['Срок_выполнения_задания_фактич'] / df_task['Срок_выполнения_задания_план']) *100
+df_task['Процентный_показатель_достижения_плановых_показателей_(%)'].replace([np.nan, -np.inf], 0, inplace=True)
+df_task['Процентный_показатель_достижения_плановых_показателей_(%)'].replace(np.inf, 80_000, inplace=True)
+df_task['Процентный_показатель_достижения_плановых_показателей_(%)'] = df_task['Процентный_показатель_достижения_плановых_показателей_(%)'].astype('int64')
+df_task = dummies(df_task, 'Вид документа')
+df_task = dummies(df_task, 'Состояние задания')
+
+# ДОПОЛНИТЕЛЬНЫЙ ПРИЗНАК ПРОЦЕНТНЫЙ ПОКАЗАТЕЛЬ С ГРАНИЦАМИ 0-100
+df_task['Процентный_показатель_границы'] = df_task['Процентный_показатель_достижения_плановых_показателей_(%)'].apply(lambda x: 100 if x >= 100 else x)
+df_task['Процентный_показатель_границы'] = df_task['Процентный_показатель_границы'].apply(lambda x: 0 if x <= 0 else x)
+
+# col_list = df_task.columns
+
+# head = df_task.head(20)
+
+show_correlations(df_task.loc[df_task['type']!=5])
+
+def remove_list(column):
+    lst = []
+    for i in column:
+        lst.append(i[0])
+        pass
+    return pd.DataFrame(lst)
+
+df_task['Дата старта задания'] = remove_list(df_task['Дата старта задания'])
+df_task['Дата завершения задания плановая'] = remove_list(df_task['Дата завершения задания плановая'])
+df_task['Дата завершения задания фактическая'] = remove_list(df_task['Дата завершения задания фактическая'])
+df_task['Дата старта задания'] = df_task['Дата старта задания'].astype('category').cat.codes.astype('int64')
+df_task['Дата завершения задания плановая'] = df_task['Дата завершения задания плановая'].astype('category').cat.codes.astype('int64')
+df_task['Дата завершения задания фактическая'] = df_task['Дата завершения задания фактическая'].astype('category').cat.codes.astype('int64')
+
+df_task = pd.merge(df, df_task, how='left', left_on='id', right_on='id')
+
+df_task[df_task.select_dtypes(['uint64']).columns] = df_task.select_dtypes(['uint64']).apply(lambda x: x.astype('int64'))
+###############################################################################
+
+# Матрица коэффициентов корреляции по Пирсону
+correlations = df_task.corr(method='pearson')
+correlations_b = correlations[correlations > 0.5]
+cor_target = abs(correlations['type'])
+sorted_cor_target = list(sorted(zip(cor_target, cor_target.index), reverse=True))
+
+df_task_best = df_task[['id', 'Суммарный_показатель_достижения_ПП_команды_%', 'Процентный_показатель_достижения_плановых_показателей_(%)']].copy()
+
+
+if __name__ == "__main__":
+    # df_task, df_task_best
+    df_task, df_task_best
+
+
+
+
+###############################################################################
+####   WorkingDay.csv   #######################################################
+###############################################################################
+
+df_train = pd.read_csv('train_dataset_train.csv')
+df_test = pd.read_csv('test_dataset_test.csv')
+df_test['type'].replace(0, 5, inplace=True)
+df = pd.concat([df_train, df_test])
+del df_train, df_test
+df_workday = pd.read_csv("WorkingDay.csv", parse_dates = ['startTime'])
+df_workday = pd.merge(df, df_workday, how='left', left_on='id', right_on='id')
+
+# head = df_workday.head(200)
+# print('\n''Количество пропущенных значений:')
+# print(df_workday.isna().sum().sort_values(ascending=False))
+# print('\n''Количество дубликатов:')
+# print(df_workday.duplicated().sum())
+
+df_workday = df_workday.drop_duplicates()
+
+# df_workday.dropna(axis=0, inplace=True)
+
+# df_workday.info()
+
+# print(df_workday.nunique().sort_values())
+
+# 0 ПРИЗНАК
+df_workday['id'] = df_workday['id'].str.strip()
+# df_workday['id'].value_counts()
+# print(df_workday['id'].unique().shape)
+# print(df_workday['id'].unique())
+
+# 1 ПРИЗНАК
+# df_workday['type'].value_counts()
+# print(df_workday['type'].unique().shape)
+# print(df_workday['type'].unique())
+
+# 2 ПРИЗНАК
+# df_workday['startTime'].value_counts()
+# print(df_workday['startTime'].unique().shape)
+# print(df_workday['startTime'].unique())
+# df_workday['startTime'] = pd.to_datetime(df_workday['startTime']).dt.date
+# df_workday['startTime_год'] = df_workday['startTime'].dt.year # НЕ ИНФОРМАТИВЕН
+df_workday['startTime_wd_месяц'] = df_workday['startTime'].dt.month
+df_workday['startTime_wd_день'] = df_workday['startTime'].dt.day
+df_workday = df_workday.drop('startTime', axis=1)
+
+# 3 ПРИЗНАК
+# df_workday['activeTime'].value_counts()
+# # Ящик с усами
+# df_workday['activeTime'].plot(kind='box')
+# plt.show()
+# desc = df_workday['activeTime'].describe()
+# df_workday=df_workday[df_workday['activeTime'] < 86_400] # 24 ч
+
+# 4 ПРИЗНАК
+# df_workday['Вых/Будни'].value_counts()
+df_workday['Вых/Будни'] = df_workday['Вых/Будни'].str.strip()
+
+# 5 ПРИЗНАК
+# df_workday['monitorTime'].value_counts()
+# # Ящик с усами
+# df_workday['monitorTime'].plot(kind='box')
+# plt.show()
+# desc = df_workday['monitorTime'].describe()
+# df_workday=df_workday[df_workday['monitorTime'] < 86_400] # 24 ч
+
+def show_correlations(dataframe):
+    correlations = abs(dataframe.corr(method='pearson')['type'])
+    correlations.drop('type').plot(kind ='bar', color='dodgerblue')
+    plt.show()
+
+show_correlations(df_workday.loc[df_workday['type']!=5])
+
+###############################################################################
+df.drop('type', axis=1, inplace=True)
+df['id'] = df['id'].str.strip()
+df_workday = pd.merge(df, df_workday, how='left', left_on='id', right_on='id')
+df_workday.fillna(0, inplace=True)
+
+df_workday = df_workday.groupby('id', as_index=False).agg(lambda x: x.tolist())
+###############################################################################
+
+df_workday['type'] = pd.DataFrame.from_dict([x for x in df_workday['type'].apply(lambda x: set(x))])
+df_workday['activeTime'] = df_workday['activeTime'].apply(lambda x: sum(x))
+# новый признак (активное время в часах)
+df_workday = df_workday.assign(activeTime_wd_часов = lambda x: (x['activeTime'] / 3600))
+df_workday['monitorTime'] = df_workday['monitorTime'].apply(lambda x: sum(x))
+# Новый признак (время за монитором в часах)
+df_workday = df_workday.assign(monitorTime_wd_часов = lambda x: (x['monitorTime'] / 3600))
+# Удалить колонки с секундами
+df_workday.drop(columns=['activeTime', 'monitorTime'], inplace=True)
+# Подсчёт количества годов, месяцев и дней
+df_workday['Кол-во_месяцев_активности_wd'] = df_workday['startTime_wd_месяц'].apply(lambda x: len(set(x)))
+df_workday['Кол-во_дней_активности_wd'] = df_workday['startTime_wd_день'].apply(lambda x: len(set(x)))
+# Удалить колонки с секундами
+df_workday.drop(columns=['startTime_wd_месяц', 'startTime_wd_день'], inplace=True)
+
+# Унитарное кодирование некоторых признаков
+df_workday_dummies = pd.get_dummies(df_workday['Вых/Будни'].apply(pd.Series).stack(), prefix='Вых_или_Будни').sum(level=0)
+df_workday_dummies = df_workday_dummies.astype('int64')
+df_workday = pd.concat([df_workday, df_workday_dummies], axis=1)
+del df_workday_dummies
+df_workday.drop('Вых/Будни', axis=1, inplace=True)
+
+# head = df_workday.head(20)
+
+# show_correlations(df_workday.loc[df_workday['type']!=5])
+
+# Новые признаки
+df_workday['Сред_кол-во_активности_в_месяц'] = (df_workday['activeTime_wd_часов'] / df_workday['Кол-во_месяцев_активности_wd'])
+df_workday['Сред_кол-во_времени_за_монитором_в_месяц'] = (df_workday['monitorTime_wd_часов'] / df_workday['Кол-во_месяцев_активности_wd'])
+df_workday['Сред_кол-во_активности_в_день'] = (df_workday['activeTime_wd_часов'] / df_workday['Кол-во_дней_активности_wd'])
+df_workday['Сред_кол-во_времени_за_монитором_в_день'] = (df_workday['monitorTime_wd_часов'] / df_workday['Кол-во_дней_активности_wd'])
+
+show_correlations(df_workday.loc[df_workday['type']!=5])
+
+df_workday = pd.merge(df, df_workday, how='left', left_on='id', right_on='id')
+###############################################################################
+
+df_workday_best = df_workday[['id', 'Кол-во_месяцев_активности_wd', 'Кол-во_дней_активности_wd', 'Вых_или_Будни_0.0']].copy()
+
+if __name__ == "__main__":
+    df_workday, df_workday_best
+
+
+
+
+###############################################################################
+####   TimenNetwork.csv   #####################################################
+###############################################################################
+
+df_train = pd.read_csv('train_dataset_train.csv')
+df_test = pd.read_csv('test_dataset_test.csv')
+df_test['type'].replace(0, 5, inplace=True)
+df = pd.concat([df_train, df_test])
+del df_train, df_test
+df_timenetwork = pd.read_csv("TimenNetwork.csv", parse_dates = ['startTime'])
+df_timenetwork = pd.merge(df, df_timenetwork, how='left', left_on='id', right_on='id')
+
+# head = df_timenetwork.head(200)
+# print('\n''Количество пропущенных значений:')
+# print(df_timenetwork.isna().sum().sort_values(ascending=False))
+# print('\n''Количество дубликатов:')
+# print(df_timenetwork.duplicated().sum())
+
+df_timenetwork = df_timenetwork.drop_duplicates()
+
+# df_timenetwork.fillna(0, inplace=True)
+
+# df_timenetwork.info()
+
+# print(df_timenetwork.nunique().sort_values())
+
+# 0 ПРИЗНАК
+df_timenetwork['id'] = df_timenetwork['id'].str.strip()
+# df_timenetwork['id'].value_counts()
+# print(df_timenetwork['id'].unique().shape)
+# print(df_timenetwork['id'].unique())
+
+# 1 ПРИЗНАК
+# df_timenetwork['type'].value_counts()
+# print(df_timenetwork['type'].unique().shape)
+# print(df_timenetwork['type'].unique())
+
+# 2 ПРИЗНАК
+# df_timenetwork['startTime'].value_counts()
+# print(df_timenetwork['startTime'].unique().shape)
+# print(df_timenetwork['startTime'].unique())
+# df_timenetwork['startTime'] = pd.to_datetime(df_timenetwork['startTime']).dt.date
+# df_timenetwork['startTime_год'] = df_timenetwork['startTime'].dt.year # НЕ ИНФОРМАТИВЕН
+df_timenetwork['startTime_tn_месяц'] = df_timenetwork['startTime'].dt.month
+df_timenetwork['startTime_tn_день'] = df_timenetwork['startTime'].dt.day
+df_timenetwork = df_timenetwork.drop('startTime', axis=1)
+
+df_timenetwork.fillna(0, inplace=True)
+
+# 3 ПРИЗНАК
+# df_timenetwork['Вых/Будни'].value_counts()
+df_timenetwork['Вых/Будни'] = df_timenetwork['Вых/Будни'].str.strip()
+
+# 4 ПРИЗНАК
+df_timenetwork['monitor_Time'].value_counts()
+# # Ящик с усами
+# df_timenetwork['monitor_Time'].plot(kind='box')
+# plt.show()
+# desc = df_timenetwork['monitor_Time'].describe()
+df_timenetwork=df_timenetwork[df_timenetwork['monitor_Time'] < 86_400] # 24 ч
+
+def show_correlations(dataframe):
+    correlations = abs(dataframe.corr(method='pearson')['type'])
+    correlations.drop('type').plot(kind ='bar', color='dodgerblue')
+    plt.show()
+
+show_correlations(df_timenetwork.loc[df_timenetwork['type']!=5])
+
+###############################################################################
+df.drop('type', axis=1, inplace=True)
+df['id'] = df['id'].str.strip()
+df_timenetwork = pd.merge(df, df_timenetwork, how='left', left_on='id', right_on='id')
+df_timenetwork.fillna(df_timenetwork.mean(), inplace=True)
+
+df_timenetwork = df_timenetwork.groupby('id', as_index=False).agg(lambda x: x.tolist())
+###############################################################################
+
+df_timenetwork['type'] = pd.DataFrame.from_dict([x for x in df_timenetwork['type'].apply(lambda x: set(x))])
+df_timenetwork['monitor_Time'] = df_timenetwork['monitor_Time'].apply(lambda x: sum(x))
+# Новый признак
+df_timenetwork = df_timenetwork.assign(monitor_Time_tn_часов = lambda x: (x['monitor_Time'] / 3600))
+# Удалить колонки с секундами
+df_timenetwork.drop('monitor_Time', axis=1, inplace=True)
+# Подсчёт количества годов, месяцев и дней
+df_timenetwork['Кол-во_месяцев_активности_tn'] = df_timenetwork['startTime_tn_месяц'].apply(lambda x: len(set(x)))
+df_timenetwork['Кол-во_дней_активности_tn'] = df_timenetwork['startTime_tn_день'].apply(lambda x: len(set(x)))
+# Удалить колонки с секундами
+df_timenetwork.drop(columns=['startTime_tn_месяц', 'startTime_tn_день'], inplace=True)
+
+# Унитарное кодирование некоторых признаков
+df_timenetwork_dummies = pd.get_dummies(df_timenetwork['Вых/Будни'].apply(pd.Series).stack(), prefix='Вых_или_Будни').sum(level=0)
+df_timenetwork_dummies = df_timenetwork_dummies.astype('int64')
+df_timenetwork = pd.concat([df_timenetwork, df_timenetwork_dummies], axis=1)
+del df_timenetwork_dummies
+df_timenetwork.drop('Вых/Будни', axis=1, inplace=True)
+
+# head = df_timenetwork.head(20)
+
+show_correlations(df_timenetwork.loc[df_timenetwork['type']!=5])
+
+# Новые признаки
+df_timenetwork['Сред_кол-во_времени_за_монитором_в_месяц'] = (df_timenetwork['monitor_Time_tn_часов'] / df_timenetwork['Кол-во_месяцев_активности_tn'])
+df_timenetwork['Сред_кол-во_времени_за_монитором_в_день'] = (df_timenetwork['monitor_Time_tn_часов'] / df_timenetwork['Кол-во_дней_активности_tn'])
+
+df_timenetwork.fillna(df_timenetwork.mean(), inplace=True)
+
+show_correlations(df_timenetwork.loc[df_timenetwork['type']!=5])
+
+df_timenetwork[df_timenetwork.select_dtypes(['float']).columns] = df_timenetwork.select_dtypes(['float']).apply(lambda x: x.astype('int'))
+
+df_timenetwork = pd.merge(df, df_timenetwork, how='left', left_on='id', right_on='id')
+
+df_timenetwork_best = df_timenetwork[['id', 'monitor_Time_tn_часов', 'Сред_кол-во_времени_за_монитором_в_день']].copy()
+
+if __name__ == "__main__":
+    df_timenetwork, df_timenetwork_best
+
+
+
+
+###############################################################################
+####   SKUD.csv   #############################################################
+###############################################################################
+
+df_train = pd.read_csv('train_dataset_train.csv')
+df_test = pd.read_csv('test_dataset_test.csv')
+df_test['type'].replace(0, 5, inplace=True)
+df = pd.concat([df_train, df_test])
+del df_train, df_test
+df_scud = pd.read_csv("SKUD.csv", parse_dates = ['Дата', 'Приход.1', 'Уход.1'])
+df_scud = pd.merge(df, df_scud, how='left', left_on='id', right_on='id')
+
+# head = df_scud.head(200)
+
+# print('\n''Количество пропущенных значений:')
+# print(df_scud.isna().sum().sort_values(ascending=False))
+# print('\n''Количество дубликатов:')
+# print(df_scud.duplicated().sum())
+
+# df_scud = df_scud.drop_duplicates()
+
+# df_scud.dropna(axis=0, inplace=True)
+
+# df_scud.info()
+
+# print(df_scud.nunique().sort_values())
+
+# 0 ПРИЗНАК
+df_scud['id'] = df_scud['id'].str.strip()
+# df_scud['id'].value_counts()
+# print(df_scud['id'].unique().shape)
+# print(df_scud['id'].unique())
+
+# 1 ПРИЗНАК
+# df_scud['type'].value_counts()
+# print(df_scud['type'].unique().shape)
+# print(df_scud['type'].unique())
+
+# 2 ПРИЗНАК
+# df_scud['Дата'].value_counts()
+# print(df_scud['Дата'].unique().shape)
+# print(df_scud['Дата'].unique())
+# df_scud['Дата'] = pd.to_datetime(df_scud['startTime']).dt.date
+df_scud['Дата_месяц'] = df_scud['Дата'].dt.month
+df_scud['Дата_день'] = df_scud['Дата'].dt.day
+df_scud = df_scud.drop('Дата', axis=1)
+
+# 3 ПРИЗНАК
+# df_scud['Вых/Будни'].value_counts()
+df_scud['Вых/Будни'] = df_scud['Вых/Будни'].str.strip()
+
+# 4 ПРИЗНАК
+# df_scud['Длительность общая'].value_counts()
+df_scud['Длительность общая'] = df_scud['Длительность общая'].str.strip().str.replace(',', '.').astype(float)
+# Ящик с усами
+# df_scud['Длительность общая'].plot(kind='box')
+# plt.show()
+
+# 5 ПРИЗНАК
+# df_scud['Длительность раб.дня без обеда'].value_counts()
+df_scud['Длительность раб.дня без обеда'] = df_scud['Длительность раб.дня без обеда'].str.strip().str.replace(',', '.').astype(float)
+# Ящик с усами
+# df_scud['Длительность раб.дня без обеда'].plot(kind='box')
+# plt.show()
+
+# 6-7 ПРИЗНАК
+df_scud.drop(columns=['Приход.1', 'Уход.1'], inplace=True)
+
+def show_correlations(dataframe):
+    correlations = abs(dataframe.corr(method='pearson')['type'])
+    correlations.drop('type').plot(kind ='bar', color='dodgerblue')
+    plt.show()
+
+show_correlations(df_scud.loc[df_scud['type']!=5])
+
+###############################################################################
+df.drop('type', axis=1, inplace=True)
+df['id'] = df['id'].str.strip()
+df_scud = pd.merge(df, df_scud, how='left', left_on='id', right_on='id')
+df_scud.fillna(0, inplace=True)
+
+df_scud = df_scud.groupby('id', as_index=False).agg(lambda x: x.tolist())
+###############################################################################
+
+df_scud['type'] = pd.DataFrame.from_dict([x for x in df_scud['type'].apply(lambda x: set(x))])
+df_scud['Длительность общая'] = df_scud['Длительность общая'].apply(lambda x: sum(x))
+df_scud['Длительность раб.дня без обеда'] = df_scud['Длительность раб.дня без обеда'].apply(lambda x: sum(x))
+# Подсчёт количества годов, месяцев и дней
+df_scud['Кол-во_месяцев_scud'] = df_scud['Дата_месяц'].apply(lambda x: len(set(x)))
+df_scud['Кол-во_дней_scud'] = df_scud['Дата_день'].apply(lambda x: len(set(x)))
+# Удаление колонки с секундами
+df_scud.drop(columns=['Дата_месяц', 'Дата_день'], inplace=True)
+
+# Унитарное кодирование некоторых признаков
+df_scud_dummies = pd.get_dummies(df_scud['Вых/Будни'].apply(pd.Series).stack(), prefix='Вых_или_Будни').sum(level=0)
+df_scud_dummies = df_scud_dummies.astype('int64')
+df_scud = pd.concat([df_scud, df_scud_dummies], axis=1)
+del df_scud_dummies
+df_scud.drop('Вых/Будни', axis=1, inplace=True)
+
+# head = df_scud.head(20)
+
+show_correlations(df_scud.loc[df_scud['type']!=5])
+
+df_scud = pd.merge(df, df_scud, how='left', left_on='id', right_on='id')
+
+df_scud_best = df_scud[['id', 'Кол-во_месяцев_scud']].copy()
+
+if __name__ == "__main__":
+    df_scud, df_scud_best
+
+
+
+
+"""
+ОБУЧЕНИЕ МОДЕЛИ (БЛИЦ-ПРОВЕРКА, ПО РЕЗУЛЬТАТАМ КОТОРОЙ ВЫБРАЛ АЛГОРИТМ, НЕ ОПИСЫВАЮ)
+
+"""
+
+import pandas as pd
+from functools import reduce
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+
+# Импортирование подготовленных наборов данных
+from file_with_education import df_ed
+from file_with_calls import df_calls
+from file_with_task import df_task
+from file_with_workdays import df_workday
+from file_with_timenetwork import df_timenetwork
+from file_with_scud import df_scud
+
+# Удалить столбец с типом
+df_calls.drop('type', axis=1, inplace=True)
+df_task.drop('type', axis=1, inplace=True)
+df_workday.drop('type', axis=1, inplace=True)
+df_timenetwork.drop('type', axis=1, inplace=True)
+df_scud.drop('type', axis=1, inplace=True)
+
+# Формирование общего датафрейма
+dataframes = [df_ed, df_calls, df_task, df_workday, df_timenetwork, df_scud]
+df_final = reduce(lambda left, right: pd.merge(left, right, on='id'), dataframes)
+del dataframes, df_ed, df_calls, df_task, df_workday, df_timenetwork, df_scud
+
+# Кодирование столбца id
+categorical_dic = dict(enumerate(df['id'].astype('category').cat.categories))
+df['id_categorical'] = df['id'].astype('category').cat.codes.astype('int64')
+
+# Разбиение НД на тренировочную и валидационную части
+df_train = df.loc[df['type']!=5]
+df_train.drop('id', axis=1, inplace=True)
+df_test = df.loc[df['type']==5]
+df_test.drop('type', axis=1, inplace=True)
+df_test.drop('id', axis=1, inplace=True)
+
+np.random.seed(7)
+
+X = df_train.drop(['type'], axis=1)
+y = df_train[['type']]
+
+from sklearn.model_selection import KFold
+from sklearn.model_selection import cross_val_score
+from xgboost import XGBRegressor
+
+model =  XGBRegressor(n_jobs=-1)
+model.fit(X, y)
+
+yhat = model.predict(df_test)
+
+to_save = df_test[['id_categorical']].reset_index(drop=True)
+to_save['type'] = pd.DataFrame(yhat, columns=['type'])
+to_save['id'] = to_save['id_categorical'].map(categorical_dic)
+to_save.drop('id_categorical', axis=1, inplace=True)
+to_save = to_save[['id', 'type']]
+
+to_save.to_csv('samples_29R.csv', index=False)
