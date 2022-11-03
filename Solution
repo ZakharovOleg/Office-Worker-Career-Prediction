@@ -15,14 +15,14 @@ from sklearn.ensemble import RandomForestClassifier
 # Формирование набора данных
 df_train = pd.read_csv('train_dataset_train.csv')
 df_test = pd.read_csv('test_dataset_test.csv')
-# Замена значения типа 0 на 5 для последующего выявления тестовых даннахы
+# Замена значений типа 0 на 5 для последующей идентификации тестовых данных по типу
 df_test['type'].replace(0, 5, inplace=True)
 df = pd.concat([df_train, df_test])
 del df_train, df_test
 df_ed = pd.read_csv('Education.csv')
 df_ed = pd.merge(df, df_ed, how='left', left_on='id', right_on='id')
 
-# Разведочный анализ данных
+# Методы разведочного анализа данных
 print('\n''Количество пропущенных значений:')
 print(df_ed.isna().sum().sort_values(ascending=False))
 print('\n''Количество дубликатов:')
@@ -36,14 +36,15 @@ print(df_ed.nunique().sort_values())
 ###############################################################################
 ###############################################################################
 
-# Обработка признаков
+# Обработка исходных признаков
 # 0 ПРИЗНАК
-# Удаление строчных пробелов
+# Удаление строчных пробелов и статистические методы
 df_ed['id'] = df_ed['id'].str.strip()
 df_ed['id'].value_counts()
 print(df_ed['id'].unique().shape)
 print(df_ed['id'].unique())
-# Разбиение сотрудников по подразделениям
+
+# Разбиение сотрудников по подразделениям (ОРГ-1, ОРГ-2) и id-номеру
 def split_id(dataframe):
     df = dataframe['id'].copy()
     df = df.str.split('-', expand=True)
@@ -53,52 +54,59 @@ df_ed['ОРГ'], df_ed['id_number']= split_id(df_ed)
 ###############################################################################
 
 # 1 ПРИЗНАК
+# Статистические методы
 df_ed['type'].value_counts()
 print(df_ed['type'].unique().shape)
 print(df_ed['type'].unique())
 ###############################################################################
 
 # 2 ПРИЗНАК
-# Удаление строчных пробелов
+# Удаление строчных пробелов и статистические методы
 df_ed['Табельный номер руководителя'] = df_ed['Табельный номер руководителя'].str.strip()
 df_ed['Табельный номер руководителя'].value_counts()
 print(df_ed['Табельный номер руководителя'].unique().shape)
 print(df_ed['Табельный номер руководителя'].unique())
-# Выявление по табельнику подразделений
+
+# Так как подразделения сотрудников и руководителей совпадают, то удалим
+# из табельного номера код подразделения
 def split_personnel_number(dataframe):
     df = dataframe['Табельный номер руководителя'].copy()
     df = df.str.split('-', expand=True)
     return df.iloc[:, 1]
 
-df_ed['Табельный_номер_руководителя_number']= split_personnel_number(df_ed)
+df_ed['Табельный_номер_руководителя_number'] = split_personnel_number(df_ed)
+
 # Замена nan-значений на 0
 df_ed['Табельный_номер_руководителя_number'].replace(np.nan, 0, inplace=True)
+
 # Удаление первоначального признака с табельным номером
 df_ed.drop('Табельный номер руководителя', axis=1, inplace=True)
 ###############################################################################
 
 # 3 ПРИЗНАК
-# Удаление строчных пробелов
+# Удаление строчных пробелов и статистические методы
 df_ed['Вид образования'] = df_ed['Вид образования'].str.strip()
 df_ed['Вид образования'].value_counts()
 print(df_ed['Вид образования'].unique().shape)
 print(df_ed['Вид образования'].unique())
-# Выполнение замены значений
+# Замена nan-значений на "Неизвестно"
+
 df_ed['Вид образования'].replace(np.nan, 'Неизвестно', inplace=True)
 ###############################################################################
 
 # 4 ПРИЗНАК
-# Удаление строчных пробелов
+# Удаление строчных пробелов и статистические методы
 df_ed['Специальность'] = df_ed['Специальность'].str.strip()
 df_ed['Специальность'].value_counts()
 print(df_ed['Специальность'].unique().shape)
 print(df_ed['Специальность'].unique())
+
 # Удаление признака по причине малой информативности
 df_ed.drop('Специальность', axis=1, inplace=True)
 ###############################################################################
 ###############################################################################
 
-# Выравнивание порядка расположения строк согласно df
+# Выравнивание порядка расположения строк согласно порядку в df
 df.drop('type', axis=1, inplace=True)
 df['id'] = df['id'].str.strip()
 df_ed = pd.merge(df, df_ed, how='left', left_on='id', right_on='id')
@@ -121,10 +129,10 @@ df_ed['ОРГ'] = df_ed['ОРГ'].apply(lambda x: 0 if x == 'ОРГ1' else 1)
 df_ed['id_number'] = df_ed['id_number'].astype('category').cat.codes.astype('int64')
 df_ed['Табельный_номер_руководителя_number'] = df_ed['Табельный_номер_руководителя_number'].astype('category').cat.codes.astype('int64')
 
-# Выравнивание порядка расположения строк согласно df
+# Выравнивание порядка расположения строк согласно порядку в df
 df_ed = pd.merge(df, df_ed, how='left', left_on='id', right_on='id')
 
-# Унитарное кодирование признака
+# Унитарное кодирование признака с видами образования
 df_ed_dummies = pd.get_dummies(df_ed['Вид образования'].apply(pd.Series).stack(), prefix='Вид_образования').sum(level=0)
 df_ed_dummies = df_ed_dummies.astype('int64')
 df_ed = pd.concat([df_ed, df_ed_dummies], axis=1)
@@ -133,16 +141,14 @@ df_ed = df_ed.drop('Вид образования', axis=1)
 ###############################################################################
 ###############################################################################
 
-# Выполнение блиц-расчёта
-from sklearn.model_selection import train_test_split
-from xgboost import XGBClassifier, plot_importance
+# Выполнение блиц-расчёта с перекрёстной  проверкой
 from sklearn.model_selection import KFold
 from sklearn.model_selection import cross_val_score
 from sklearn.ensemble import RandomForestClassifier
 
 np.random.seed(7)
 
-def experiment(dataframe):
+def experiment(dataframe, n_estimators):
     df_train = dataframe.loc[dataframe['type']!=5]
     df_train.drop('id', axis=1, inplace=True)
 
@@ -152,17 +158,18 @@ def experiment(dataframe):
     X = df_train.drop(['type'], axis=1)
     y = df_train[['type']]
 
-    model =  RandomForestClassifier(n_jobs=-1)
+    model =  RandomForestClassifier(n_estimators=n_estimators, n_jobs=-1)
     kfold = KFold(n_splits=10)
     results = cross_val_score(model, X, y, cv=kfold, verbose=1, n_jobs=-1)
     print('\n'"Accuracy: %.2f%% (%.2f%%)" % (results.mean()*100, results.std()*100))
     return results
 
-results = experiment(df_ed)
+results = experiment(df_ed, n_estimators=30)
 ###############################################################################
 
-# Матрица коэффициентов корреляции
+# Матрица коэффициентов корреляции признаков друг с другом
 correlations = df_ed.corr(method='pearson')
+# Фильтрация
 correlations_filter = correlations[correlations > 0.2]
 
 # Корреляция с целевой переменной (тренировочная часть)
@@ -175,19 +182,25 @@ show_correlations(df_ed.loc[df_ed['type']!=5])
 ###############################################################################
 ###############################################################################
 
+'''
+Попытка восстановить пропущенные табельные номера руководителей по текущему
+набору данных по причине высокой кореляции с целевой переменной (см. график
+корреляции). Восстановление выполнялось среди подразделения ОРГ-2 (код 1);
+восстановление табельных номеров в ОРГ-1 (код 0) не дало приемлемых результатов 
+'''
 def restore_missing_ОРГ(dataframe):
-    # Фильтр по ОРГ-1
-    ОРГ_1 = dataframe.loc[dataframe['ОРГ']==1]
-    # Фильтр ОРГ_1 по типу
-    ОРГ_1 = ОРГ_1.loc[ОРГ_1['type']!=5]
+    # Фильтр по ОРГ-2
+    ОРГ_2 = dataframe.loc[dataframe['ОРГ']==1]
+    # Фильтр ОРГ_2 по типу
+    ОРГ_2 = ОРГ_2.loc[ОРГ_2['type']!=5]
     # Формирование df
-    df_ОРГ1 = ОРГ_1.copy()
-    df_ОРГ1.drop('id', axis=1, inplace=True)
+    df_ОРГ2 = ОРГ_2.copy()
+    df_ОРГ2.drop('id', axis=1, inplace=True)
 
     # Фильтр: для тренировочных данных табельник с номером > 0
-    df_train = df_ОРГ1.loc[df_ОРГ1['Табельный_номер_руководителя_number']!=0]
+    df_train = df_ОРГ2.loc[df_ОРГ2['Табельный_номер_руководителя_number']!=0]
     # Фильтр: для тестовых = 0
-    df_test = df_ОРГ1.loc[df_ОРГ1['Табельный_номер_руководителя_number']==0]
+    df_test = df_ОРГ2.loc[df_ОРГ2['Табельный_номер_руководителя_number']==0]
     df_test = df_test.drop(['Табельный_номер_руководителя_number'], axis=1)
 
     X = df_train.drop(['Табельный_номер_руководителя_number'], axis=1)
@@ -195,7 +208,7 @@ def restore_missing_ОРГ(dataframe):
 
     model =  RandomForestClassifier()
     kfold = KFold(n_splits=10)
-    results_restore = cross_val_score(model, X, y, cv=kfold, verbose=1, n_jobs=-1)
+    results_restore = cross_val_score(model, X, y, cv=kfold, verbose=2, n_jobs=-1)
     print('\n'"Kfold_rain_accuracy: %.2f%% (%.2f%%)" % (results_restore.mean()*100, results_restore.std()*100))
 
     model.fit(X, y)
@@ -206,31 +219,30 @@ def restore_missing_ОРГ(dataframe):
     df_test = df_test[['id_number']].copy().reset_index(drop=True)
     df_test['Табельный_номер_руководителя_number'] = yhat
 
-    ОРГ_1 = pd.merge(ОРГ_1[['id', 'Табельный_номер_руководителя_number', 'id_number']], df_test, how='left', left_on='id_number', right_on='id_number')
-    ОРГ_1.fillna(0, inplace=True)
-    ОРГ_1['Табельный_номер_руководителя_number'] = ОРГ_1['Табельный_номер_руководителя_number_x'] + ОРГ_1['Табельный_номер_руководителя_number_y']
-    ОРГ_1.drop(columns=['Табельный_номер_руководителя_number_x', 'Табельный_номер_руководителя_number_y'], inplace=True)
-    ОРГ_1.drop('id_number', axis=1, inplace=True)
-    ОРГ_1.fillna(0, inplace=True)
+    ОРГ_2 = pd.merge(ОРГ_2[['id', 'Табельный_номер_руководителя_number', 'id_number']], df_test, how='left', left_on='id_number', right_on='id_number')
+    ОРГ_2.fillna(0, inplace=True)
+    ОРГ_2['Табельный_номер_руководителя_number'] = ОРГ_2['Табельный_номер_руководителя_number_x'] + ОРГ_2['Табельный_номер_руководителя_number_y']
+    ОРГ_2.drop(columns=['Табельный_номер_руководителя_number_x', 'Табельный_номер_руководителя_number_y'], inplace=True)
+    ОРГ_2.drop('id_number', axis=1, inplace=True)
+    ОРГ_2.fillna(0, inplace=True)
 
-    ОРГ_1_5 = dataframe.loc[dataframe['ОРГ']==1]
-    ОРГ_1_5 = ОРГ_1_5.loc[ОРГ_1_5['type']==5]
-    ОРГ_1_5 = ОРГ_1_5[['id', 'Табельный_номер_руководителя_number']]
-    ОРГ_1 = pd.concat([ОРГ_1, ОРГ_1_5])
+    ОРГ_2_5 = dataframe.loc[dataframe['ОРГ']==1]
+    ОРГ_2_5 = ОРГ_2_5.loc[ОРГ_2_5['type']==5]
+    ОРГ_2_5 = ОРГ_2_5[['id', 'Табельный_номер_руководителя_number']]
+    ОРГ_2 = pd.concat([ОРГ_2, ОРГ_2_5])
 
-    ОРГ_1_full = df_ed.loc[df_ed['ОРГ']==1]
-    ОРГ_1_full = pd.DataFrame(ОРГ_1_full['id'])
-    ОРГ_1_full = pd.merge(ОРГ_1_full['id'], ОРГ_1, how='left', left_on='id', right_on='id')
-    ОРГ_0_full = df_ed.loc[df_ed['ОРГ']==0]
-    ОРГ_0_full = ОРГ_0_full[['id', 'Табельный_номер_руководителя_number']]
-    ОРГ_0_1 = pd.concat([ОРГ_1_full, ОРГ_0_full])
+    ОРГ_2_full = dataframe.loc[dataframe['ОРГ']==1]
+    ОРГ_2_full = pd.DataFrame(ОРГ_2_full['id'])
+    ОРГ_2_full = pd.merge(ОРГ_2_full['id'], ОРГ_2, how='left', left_on='id', right_on='id')
+    ОРГ_1_full = dataframe.loc[dataframe['ОРГ']==0]
+    ОРГ_1_full = ОРГ_1_full[['id', 'Табельный_номер_руководителя_number']]
+    ОРГ_1_1 = pd.concat([ОРГ_2_full, ОРГ_1_full])
 
-    # Соединение восстановленных значений по ОРГ-1 с df
-    df = pd.merge(dataframe['id'], ОРГ_0_1, how='left', left_on='id', right_on='id')
+    # Соединение восстановленных значений по ОРГ-2 с df
+    df = pd.merge(dataframe['id'], ОРГ_1_1, how='left', left_on='id', right_on='id')
     df.fillna(0, inplace=True)
     df = pd.merge(dataframe['id'], df, how='left', left_on='id', right_on='id')
-    # Возврат df с подготовленным табельным номером (замещение пропущенных значений
-    # в подразделении ОРГ-1 с эффективностью 70% по данным файла education
+    # Возврат df с подготовленным табельным номером
     return df
 
 tab_col = restore_missing_ОРГ(df_ed)
@@ -238,17 +250,22 @@ tab_col = pd.merge(df, tab_col, how='left', left_on='id', right_on='id')
 tab_col.drop('id', axis=1, inplace=True)
 
 df_ed['Табельный_номер_руководителя_number'] = tab_col; del tab_col
-###############################################################################
+
+'''
+Замещение пропущенных значений в подразделении ОРГ-2 по данным файла education
+выполнилось с эффективностью ~70%
+'''
+
 ###############################################################################
 
-# Удостоверяемся, что корреляця признака с табельным номером к типу увеличилась
+# Удостоверяемся, что корреляция полученного признака с замещёнными значениями
+# к типу увеличилась
 show_correlations(df_ed.loc[df_ed['type']!=5])
 
 ###############################################################################
-# Дополнительный признак
+# Создание дополнительного признака с номером команды
 def add_command_number(dataframe):
     df = dataframe[['id_number', 'Табельный_номер_руководителя_number']]
-    # Группировка по табельному номеру руководителя
     df = df.groupby('Табельный_номер_руководителя_number', as_index=False).agg(lambda x: x.tolist())
     # Определение команды/отдела
     df['Номер_команды'] = df['Табельный_номер_руководителя_number'].astype('category').cat.codes.astype('int64')
@@ -264,31 +281,36 @@ del command_number
 show_correlations(df_ed.loc[df_ed['type']!=5])
 
 # Удаление переменных
-del correlations, correlations_filter
+del correlations, correlations_filter, results
 
-# Формирование набора данных с наиболее коррелирующими с целевой переменной признаками
-df_ed_best = df_ed[['id', 'type', 'ОРГ', 'id_number', 'Табельный_номер_руководителя_number', 'Номер_команды']].copy()
+# Вариант обработанного набора данных с наиболее коррелирующими с целевой переменной признаками
+df_ed_best = df_ed[['id', 'type', 'ОРГ', 'id_number',
+                    'Табельный_номер_руководителя_number',
+                    'Вид_образования_Высшее образование - специалитет, магистратура',
+                    'Вид_образования_Неизвестно',
+                    'Вид_образования_Среднее профессиональное образование',
+                    'Номер_команды']].copy()
 
-# Точка вхождения для подгрузки подготовленного набора данных в файл с моделью
+# Точка входа для подгрузки подготовленного набора данных в файл с моделью
 if __name__ == "__main__":
     df_ed, df_ed_best
 
 
 
 
-
 """
 ТАК КАК КАЖДЫЙ ИХ ИСХОДНЫХ НАБОРОВ ДАННЫХ АНАЛИЗИРОВАЛ И ПОДГОТАВЛИВАЛ В ОТДЕЛЬНОМ ФАЙЛЕ,
-КОТОРЫЙ ЗАТЕМ ПОДГРУЖАЛ КАК МОДУЛЬ, ВСЕ ДАЛЬНЕЙШИЕ ШАГИ ПОСТРОЧНЫЕ И С МИНИМАЛЬНЫМИ ПОЯСНЕНИЯМИ.
-ТАКЖЕ УБРАЛ КОД С ЭКСПЕРИМЕНТОМ НА RFC ДЛЯ КАЖДОГО НАБОРА ДАННЫХ, ЧТОБЫ РАСТЯГИВАТЬ КОД.
+КОТОРЫЙ ЗАТЕМ ПОДГРУЖАЛ КАК МОДУЛЬ, ВСЕ ДАЛЬНЕЙШИЕ ШАГИ ОДНОТИПНЫЕ, ПОСТРОЧНЫЕ И С МИНИМАЛЬНЫМИ
+ПОЯСНЕНИЯМИ.
+ТАКЖЕ УБРАЛ КОД С ЭКСПЕРИМЕНТОМ (БЛИЦ-РАСЧЁТ( ДЛЯ КАЖДОГО НАБОРА ДАННЫХ, ЧТОБЫ РАСТЯГИВАТЬ ОПИСАНИЕ.
 
 """
 
 
 
-###############################################################################
-####   Calls.csv   ############################################################
-###############################################################################
+'''
+    Calls.csv
+                '''
 
 df_train = pd.read_csv('train_dataset_train.csv')
 df_test = pd.read_csv('test_dataset_test.csv')
@@ -421,10 +443,9 @@ if __name__ == "__main__":
 
 
 
-
-###############################################################################
-####   Calls.csv   ############################################################
-###############################################################################
+'''
+    Tasks.csv
+                '''
 
 df_train = pd.read_csv('train_dataset_train.csv')
 df_test = pd.read_csv('test_dataset_test.csv')
@@ -628,17 +649,14 @@ sorted_cor_target = list(sorted(zip(cor_target, cor_target.index), reverse=True)
 
 df_task_best = df_task[['id', 'Суммарный_показатель_достижения_ПП_команды_%', 'Процентный_показатель_достижения_плановых_показателей_(%)']].copy()
 
-
 if __name__ == "__main__":
-    # df_task, df_task_best
     df_task, df_task_best
 
 
 
-
-###############################################################################
-####   WorkingDay.csv   #######################################################
-###############################################################################
+'''
+    WorkingDay.csv
+                    '''
 
 df_train = pd.read_csv('train_dataset_train.csv')
 df_test = pd.read_csv('test_dataset_test.csv')
@@ -763,10 +781,9 @@ if __name__ == "__main__":
 
 
 
-
-###############################################################################
-####   TimenNetwork.csv   #####################################################
-###############################################################################
+'''
+    TimenNetwork.csv
+                    '''
 
 df_train = pd.read_csv('train_dataset_train.csv')
 df_test = pd.read_csv('test_dataset_test.csv')
@@ -883,10 +900,9 @@ if __name__ == "__main__":
 
 
 
-
-###############################################################################
-####   SKUD.csv   #############################################################
-###############################################################################
+'''
+    SKUD.csv
+                '''
 
 df_train = pd.read_csv('train_dataset_train.csv')
 df_test = pd.read_csv('test_dataset_test.csv')
@@ -997,17 +1013,19 @@ if __name__ == "__main__":
 
 
 
+'''
+ОБУЧЕНИЕ МОДЕЛИ. БЛИЦ-ПРОВЕРКУ, ПО РЕЗУЛЬТАТАМ КОТОРОЙ ВЫБРАЛ НАИБОЛЕЕ 
+ЭФФЕКТИВНЫЙ АЛГОРИТМ, НЕ ОПИСЫВАЮ). ДЛЯ БОЛЕЕ ЯСНОГО ПОНИМАНИЯ ОПИСАНИЯ
+КОД ВЫПОЛНЕН ПОСТРОЧНО.
 
-"""
-ОБУЧЕНИЕ МОДЕЛИ (БЛИЦ-ПРОВЕРКА, ПО РЕЗУЛЬТАТАМ КОТОРОЙ ВЫБРАЛ АЛГОРИТМ, НЕ ОПИСЫВАЮ)
-
-"""
+'''
 
 import pandas as pd
 from functools import reduce
 import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold
+from sklearn.model_selection import cross_val_score
+from sklearn.ensemble import RandomForestClassifier
 
 # Импортирование подготовленных наборов данных
 from file_with_education import df_ed
@@ -1017,19 +1035,19 @@ from file_with_workdays import df_workday
 from file_with_timenetwork import df_timenetwork
 from file_with_scud import df_scud
 
-# Удалить столбец с типом
+# Удаление столбца с типом из наборов со всеми признаками
 df_calls.drop('type', axis=1, inplace=True)
 df_task.drop('type', axis=1, inplace=True)
 df_workday.drop('type', axis=1, inplace=True)
 df_timenetwork.drop('type', axis=1, inplace=True)
 df_scud.drop('type', axis=1, inplace=True)
 
-# Формирование общего датафрейма
+# Формирование общего набора данных
 dataframes = [df_ed, df_calls, df_task, df_workday, df_timenetwork, df_scud]
 df_final = reduce(lambda left, right: pd.merge(left, right, on='id'), dataframes)
 del dataframes, df_ed, df_calls, df_task, df_workday, df_timenetwork, df_scud
 
-# Кодирование столбца id
+# Кодирование столбца с id сотрудника
 categorical_dic = dict(enumerate(df['id'].astype('category').cat.categories))
 df['id_categorical'] = df['id'].astype('category').cat.codes.astype('int64')
 
@@ -1045,11 +1063,7 @@ np.random.seed(7)
 X = df_train.drop(['type'], axis=1)
 y = df_train[['type']]
 
-from sklearn.model_selection import KFold
-from sklearn.model_selection import cross_val_score
-from xgboost import XGBRegressor
-
-model =  XGBRegressor(n_jobs=-1)
+model =  RandomForestClassifier(n_jobs=-1)
 model.fit(X, y)
 
 yhat = model.predict(df_test)
@@ -1060,4 +1074,4 @@ to_save['id'] = to_save['id_categorical'].map(categorical_dic)
 to_save.drop('id_categorical', axis=1, inplace=True)
 to_save = to_save[['id', 'type']]
 
-to_save.to_csv('samples_29R.csv', index=False)
+to_save.to_csv('samples_RFC.csv', index=False)
